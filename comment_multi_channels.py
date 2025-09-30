@@ -9,8 +9,8 @@ from googleapiclient.errors import HttpError
 import os, json, isodate, time
 
 # ---------- AUTH CONFIG (en clair, comme demande) ----------
-CLIENT_ID     = os.getenv("YT_CLIENT_ID", CLIENT_ID)
-CLIENT_SECRET = os.getenv("YT_CLIENT_SECRET", CLIENT_SECRET)
+CLIENT_ID = os.getenv("YT_CLIENT_ID")
+CLIENT_SECRET = os.getenv("YT_CLIENT_SECRET")
 
 PORT          = 8080
 SCOPES        = ["https://www.googleapis.com/auth/youtube.force-ssl"]
@@ -248,4 +248,5 @@ total_comments = 0
 for target in CHANNEL_TARGETS:
     total_comments += process_channel(yt, target)
     time.sleep(1.5)
+
 print(f"\nTotal de commentaires postes : {total_comments}")

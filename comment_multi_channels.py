@@ -1,4 +1,5 @@
 # comment_multi_channels.py
+# Dépendances: google-api-python-client google-auth-oauthlib isodate
 # pip install google-api-python-client google-auth-oauthlib isodate
 
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -6,24 +7,29 @@ from google.auth.transport.requests import Request
 import google.oauth2.credentials as oauth2
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
 import os, json, isodate, time, random, datetime as _dt
 
-# ---------- AUTH CONFIG ----------
-CLIENT_ID     = os.getenv("YT_CLIENT_ID")      # fourni via secrets/ENV
-CLIENT_SECRET = os.getenv("YT_CLIENT_SECRET")  # fourni via secrets/ENV
+# ===============================
+# CONFIG AUTH
+# ===============================
+CLIENT_ID     = os.getenv("YT_CLIENT_ID")      # via secrets/ENV
+CLIENT_SECRET = os.getenv("YT_CLIENT_SECRET")  # via secrets/ENV
 PORT          = 8080
 SCOPES        = ["https://www.googleapis.com/auth/youtube.force-ssl"]
 TOKEN_FILE    = "token_comment.json"
 
-# ---------- COMMENT BUILDER (réaliste & variable) ----------
+# ===============================
+# COMMENT BUILDER (réaliste & variable)
+# ===============================
 SUB_LINK = "https://youtube.com/@MrPlavon?sub_confirmation=1"
 _utm = _dt.datetime.utcnow().strftime("%Y%m%d")
 SUB_LINK_UTM = f"{SUB_LINK}&utm_source=yt_comments&utm_medium=bot&utm_campaign=auto_{_utm}"
 
-# Ratios (tunable) — plus bas = plus safe
-INCLUDE_LINK_RATIO  = 0.22   # % de commentaires avec le lien
-SELF_MENTION_RATIO  = 0.35   # % de commentaires qui citent ta chaîne
-EMOJI_RATIO         = 0.30   # % de commentaires avec emojis
+# Ratios (ajuste si tu veux être plus/moins agressif)
+INCLUDE_LINK_RATIO  = 0.22   # % de commentaires avec le lien d’abo
+SELF_MENTION_RATIO  = 0.35   # % avec mention “je fais du contenu similaire”
+EMOJI_RATIO         = 0.30   # % avec 1–3 emojis
 MAX_EMOJIS          = 3
 EMOJI_POOL = ["🔥","🚀","👏","💡","🎯","📈","👌","🙌","✨"]
 
@@ -86,9 +92,10 @@ def make_comment_for_short():
     )
     return _polish(txt)
 
-# ---------- LISTE CHAÎNES (mode vendredi) ----------
+# ===============================
+# LISTE CHAÎNES (mode vendredi)
+# ===============================
 CHANNEL_TARGETS = [
-    # Mets ici ta liste FR — exemples :
     "Yomi Denzel", "Theophile Eliet", "@oussamaammaroff", "Enzo Honore",
     "Olivier Roland", "Marketing Mania", "Business Dynamite", "Le Marketeur Français",
     "Tugan Bara", "Antoine BM", "Jean Riviere", "Alexandre Roth",
@@ -101,20 +108,39 @@ CHANNEL_TARGETS = [
     "Thinkerview", "Heu?reka", "Draw My Economy", "Institut des Libertes",
     "Les Echos", "BFM Business", "Zone Bourse", "IG France", "TV Finance",
     "Hasheur", "Cryptoast", "Journal du Coin", "Thami Kabbaj", "Young Trader Wealth",
-    "@singeexplique", "@timotheemoiroux", "SébastienKoubar", "@Shubham_Sharma", "@sanspermissionpodcast", 
-    "@monsieurrodolphe1", "@MatthieuLouvet", "@MoneyRadarAvis", "@moneyradarcrypto", "@amistory", "@GaspardG", "@hugodecrypteactus"
+    "@singeexplique", "@timotheemoiroux", "SébastienKoubar", "@Shubham_Sharma",
+    "@sanspermissionpodcast", "@monsieurrodolphe1", "@MatthieuLouvet",
+    "@MoneyRadarAvis", "@moneyradarcrypto", "@amistory", "@GaspardG", "@hugodecrypteactus"
 ]
 
-# ---------- PARAMS RECHERCHE THÈME (autres jours) ----------
-THEME_QUERY = "argent investissement IA business"
-SEARCH_REGION_CODE = "FR"
+# ===============================
+# RECHERCHE THÈMES (autres jours)
+# ===============================
+THEME_QUERIES = [
+    "argent investissement IA business",
+    "gagner de l'argent IA",
+    "business en ligne 2025",
+    "investissement débutant",
+    "finance personnelle france",
+    "entrepreneuriat astuces",
+]
 SEARCH_RELEVANCE_LANG = "fr"
-SEARCH_PUBLISHED_AFTER_DAYS = 7   # vidéos récentes
-SEARCH_PAGE_LIMIT = 6             # jusqu’à ~6*50=300 résultats bruts max
-NEED_VIDEOS = 50                  # >= 60s
-NEED_SHORTS = 50                  # < 60s
+SEARCH_REGION_CODE    = "FR"   # commente si trop restrictif
+SEARCH_PUBLISHED_AFTER_DAYS = 30  # élargit la moisson
+SEARCH_PAGE_LIMIT     = 20       # jusqu’à ~1000 résultats bruts/req
+NEED_VIDEOS           = 50       # >= 60s
+NEED_SHORTS           = 50       # < 60s
 
-# ---------- Utils auth ----------
+# Sécurité & anti-spam
+MAX_COMMENTS_PER_RUN  = 120
+SLEEP_MIN, SLEEP_MAX  = 1.2, 3.0   # jitter entre commentaires
+
+# Override pour tester le mode “vendredi”
+IS_FRIDAY_OVERRIDE = os.getenv("FORCE_FRIDAY") == "1"
+
+# ===============================
+# AUTH
+# ===============================
 def _load_token(path, scopes):
     if not os.path.exists(path):
         return None
@@ -153,7 +179,9 @@ def auth_youtube():
             f.write(creds.to_json())
     return build("youtube", "v3", credentials=creds)
 
-# ---------- Helpers API ----------
+# ===============================
+# HELPERS API
+# ===============================
 def iso_to_seconds(iso):
     return int(isodate.parse_duration(iso).total_seconds())
 
@@ -217,173 +245,192 @@ def find_last_video_and_short(yt, uploads_id):
             break
     return last_video, last_short
 
-def search_theme_collect(yt, query, need_videos=50, need_shorts=50):
-    """Retourne deux listes: [(id,title), ...] vidéos et shorts, par recherche globale récente."""
+# ===============================
+# RECHERCHE THÈMES – multi-requêtes & 2 passes
+# ===============================
+def search_theme_collect(yt, query_or_queries, need_videos=50, need_shorts=50):
     import datetime as _dt
-    published_after_ts = time.time() - SEARCH_PUBLISHED_AFTER_DAYS * 86400
-    published_after_iso = _dt.datetime.utcfromtimestamp(published_after_ts).strftime("%Y-%m-%dT%H:%M:%SZ")
+    queries = query_or_queries if isinstance(query_or_queries, list) else [query_or_queries]
 
-    videos, shorts = [], []
-    page_token = None
-    page_count = 0
-    seen_ids = set()
+    def _collect(order_mode, use_published_after=True):
+        videos, shorts = [], []
+        seen_ids = set()
+        published_after_iso = None
+        if use_published_after:
+            ts = time.time() - SEARCH_PUBLISHED_AFTER_DAYS * 86400
+            published_after_iso = _dt.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    while page_count < SEARCH_PAGE_LIMIT and (len(videos) < need_videos or len(shorts) < need_shorts):
-        res = yt.search().list(
-            part="id,snippet", q=query, type="video", maxResults=50,
-            regionCode=SEARCH_REGION_CODE, publishedAfter=published_after_iso,
-            order="date", relevanceLanguage=SEARCH_RELEVANCE_LANG,
-            pageToken=page_token
-        ).execute()
+        for q in queries:
+            page_token = None
+            page_count = 0
+            while page_count < SEARCH_PAGE_LIMIT and (len(videos) < need_videos or len(shorts) < need_shorts):
+                params = dict(
+                    part="id,snippet", q=q, type="video", maxResults=50,
+                    order=order_mode, relevanceLanguage=SEARCH_RELEVANCE_LANG,
+                )
+                # Optionnel: commente la ligne ci-dessous si trop restrictif
+                params["regionCode"] = SEARCH_REGION_CODE
+                if published_after_iso:
+                    params["publishedAfter"] = published_after_iso
+                if page_token:
+                    params["pageToken"] = page_token
 
-        items = res.get("items", [])
-        ids = [it["id"]["videoId"] for it in items if it["id"]["kind"] == "youtube#video"]
-        if not ids:
-            break
+                res = yt.search().list(**params).execute()
+                items = res.get("items", [])
+                ids = [it["id"]["videoId"] for it in items if it["id"]["kind"] == "youtube#video"]
+                if not ids:
+                    break
 
-        # Récup durées
-        dur_map = {}
-        details = yt.videos().list(part="contentDetails,snippet", id=",".join(ids)).execute()
-        for it in details.get("items", []):
-            vid = it["id"]
-            dur_s = iso_to_seconds(it["contentDetails"]["duration"])
-            title = it["snippet"]["title"]
-            dur_map[vid] = (title, dur_s)
+                det = yt.videos().list(part="contentDetails,snippet", id=",".join(ids)).execute()
+                for it in det.get("items", []):
+                    vid = it["id"]
+                    if vid in seen_ids:
+                        continue
+                    dur = iso_to_seconds(it["contentDetails"]["duration"])
+                    title = it["snippet"]["title"]
+                    if dur < 60 and len(shorts) < need_shorts:
+                        shorts.append((vid, title)); seen_ids.add(vid)
+                    elif dur >= 60 and len(videos) < need_videos:
+                        videos.append((vid, title)); seen_ids.add(vid)
+                    if len(videos) >= need_videos and len(shorts) >= need_shorts:
+                        break
 
-        for vid in ids:
-            if vid in seen_ids or vid not in dur_map:
-                continue
-            seen_ids.add(vid)
-            title, dur = dur_map[vid]
-            if dur < 60 and len(shorts) < need_shorts:
-                shorts.append((vid, title))
-            elif dur >= 60 and len(videos) < need_videos:
-                videos.append((vid, title))
-            if len(videos) >= need_videos and len(shorts) >= need_shorts:
-                break
+                page_token = res.get("nextPageToken")
+                page_count += 1
+                if not page_token:
+                    break
+        return videos, shorts
 
-        page_token = res.get("nextPageToken")
-        page_count += 1
-        if not page_token:
-            break
+    # Pass 1 : récents + tri par date
+    V1, S1 = _collect(order_mode="date", use_published_after=True)
+    if len(V1) >= need_videos and len(S1) >= need_shorts:
+        return V1[:need_videos], S1[:need_shorts]
 
+    # Pass 2 : élargi (sans publishedAfter) + tri par pertinence
+    V2, S2 = _collect(order_mode="relevance", use_published_after=False)
+
+    # Merge & tronque
+    def _merge_take(A, B, n):
+        out, seen = [], set()
+        for x in A + B:
+            if x[0] in seen: continue
+            out.append(x); seen.add(x[0])
+            if len(out) >= n: break
+        return out
+
+    videos = _merge_take(V1, V2, need_videos)
+    shorts = _merge_take(S1, S2, need_shorts)
     return videos, shorts
 
-# ---------- MAIN ----------
+# ===============================
+# MAIN
+# ===============================
 def main():
     yt = auth_youtube()
-    # Vendredi ? (TZ respectée si ton runner a TZ=Europe/Paris)
-    is_friday = (time.localtime().tm_wday == 4)  # Lundi=0 ... Vendredi=4
+
+    # Vendredi ? (respecte TZ du runner si tu l’as fixée, ex: Europe/Paris)
+    weekday = time.localtime().tm_wday  # 0=lundi, 4=vendredi
+    is_friday = (weekday == 4) or IS_FRIDAY_OVERRIDE
 
     total_comments = 0
     already_done = set()
 
+    def _sleep():
+        time.sleep(random.uniform(SLEEP_MIN, SLEEP_MAX))
+
     if is_friday:
         print("Mode: listes de YouTubers (vendredi)")
-        # Cap global 50 vidéos + 50 shorts
         vids_needed, shorts_needed = 50, 50
 
         for target in CHANNEL_TARGETS:
-            if vids_needed <= 0 and shorts_needed <= 0:
+            if vids_needed <= 0 and shorts_needed <= 0 or total_comments >= MAX_COMMENTS_PER_RUN:
                 break
             try:
                 uploads_id, channel_title, _ = resolve_uploads_playlist(yt, target)
             except Exception as e:
-                print(f"[WARN] Resolution echouee '{target}': {e}")
+                print(f"[WARN] Résolution échouée '{target}': {e}")
                 continue
 
             last_video, last_short = find_last_video_and_short(yt, uploads_id)
 
-            # Vidéo
             if last_video and vids_needed > 0:
                 vid, title = last_video
                 if vid not in already_done:
                     try:
-                        text = make_comment_for_video()
-                        resp = comment(yt, vid, text)
+                        resp = comment(yt, vid, make_comment_for_video())
                         print(f"[OK] Liste: video '{title}' -> {resp['id']}")
-                        total_comments += 1
-                        vids_needed -= 1
-                        already_done.add(vid)
-                        time.sleep(1.2)
+                        total_comments += 1; vids_needed -= 1; already_done.add(vid)
+                        _sleep()
                     except HttpError as e:
                         print(f"[WARN] Echec com video '{title}' ({vid}): {e}")
 
-            # Short (éviter doublon même id)
-            if last_short and shorts_needed > 0:
+            if last_short and shorts_needed > 0 and total_comments < MAX_COMMENTS_PER_RUN:
                 sid, stitle = last_short
                 if sid not in already_done:
                     try:
-                        text = make_comment_for_short()
-                        resp = comment(yt, sid, text)
+                        resp = comment(yt, sid, make_comment_for_short())
                         print(f"[OK] Liste: short '{stitle}' -> {resp['id']}")
-                        total_comments += 1
-                        shorts_needed -= 1
-                        already_done.add(sid)
-                        time.sleep(1.2)
+                        total_comments += 1; shorts_needed -= 1; already_done.add(sid)
+                        _sleep()
                     except HttpError as e:
                         print(f"[WARN] Echec com short '{stitle}' ({sid}): {e}")
 
         print(f"Reste (après listes): videos={vids_needed}, shorts={shorts_needed}")
 
-        # Si la liste n’a pas suffi, bascule en recherche pour compléter
-        if vids_needed > 0 or shorts_needed > 0:
+        if (vids_needed > 0 or shorts_needed > 0) and total_comments < MAX_COMMENTS_PER_RUN:
             print("Complément par recherche de thème pour atteindre 50/50.")
-            vlist, slist = search_theme_collect(yt, THEME_QUERY, vids_needed, shorts_needed)
+            vlist, slist = search_theme_collect(yt, THEME_QUERIES, vids_needed, shorts_needed)
 
             for vid, title in vlist:
+                if total_comments >= MAX_COMMENTS_PER_RUN: break
                 if vid in already_done: continue
                 try:
-                    text = make_comment_for_video()
-                    resp = comment(yt, vid, text)
-                    print(f"[OK] Theme: video '{title}' -> {resp['id']}")
-                    total_comments += 1
-                    already_done.add(vid)
-                    time.sleep(1.2)
+                    resp = comment(yt, vid, make_comment_for_video())
+                    print(f"[OK] Thème: video '{title}' -> {resp['id']}")
+                    total_comments += 1; already_done.add(vid)
+                    _sleep()
                 except HttpError as e:
-                    print(f"[WARN] Echec com theme video '{title}' ({vid}): {e}")
+                    print(f"[WARN] Echec com thème video '{title}' ({vid}): {e}")
 
             for sid, stitle in slist:
+                if total_comments >= MAX_COMMENTS_PER_RUN: break
                 if sid in already_done: continue
                 try:
-                    text = make_comment_for_short()
-                    resp = comment(yt, sid, text)
-                    print(f"[OK] Theme: short '{stitle}' -> {resp['id']}")
-                    total_comments += 1
-                    already_done.add(sid)
-                    time.sleep(1.2)
+                    resp = comment(yt, sid, make_comment_for_short())
+                    print(f"[OK] Thème: short '{stitle}' -> {resp['id']}")
+                    total_comments += 1; already_done.add(sid)
+                    _sleep()
                 except HttpError as e:
-                    print(f"[WARN] Echec com theme short '{stitle}' ({sid}): {e}")
+                    print(f"[WARN] Echec com thème short '{stitle}' ({sid}): {e}")
 
     else:
         print("Mode: recherche par thème (hors vendredi)")
-        vlist, slist = search_theme_collect(yt, THEME_QUERY, NEED_VIDEOS, NEED_SHORTS)
+        vlist, slist = search_theme_collect(yt, THEME_QUERIES, NEED_VIDEOS, NEED_SHORTS)
 
         for vid, title in vlist:
+            if total_comments >= MAX_COMMENTS_PER_RUN: break
             try:
-                text = make_comment_for_video()
-                resp = comment(yt, vid, text)
-                print(f"[OK] Theme: video '{title}' -> {resp['id']}")
+                resp = comment(yt, vid, make_comment_for_video())
+                print(f"[OK] Thème: video '{title}' -> {resp['id']}")
                 total_comments += 1
-                time.sleep(1.2)
+                _sleep()
             except HttpError as e:
-                print(f"[WARN] Echec com theme video '{title}' ({vid}): {e}")
+                print(f"[WARN] Echec com thème video '{title}' ({vid}): {e}")
 
         for sid, stitle in slist:
+            if total_comments >= MAX_COMMENTS_PER_RUN: break
             try:
-                text = make_comment_for_short()
-                resp = comment(yt, sid, text)
-                print(f"[OK] Theme: short '{stitle}' -> {resp['id']}")
+                resp = comment(yt, sid, make_comment_for_short())
+                print(f"[OK] Thème: short '{stitle}' -> {resp['id']}")
                 total_comments += 1
-                time.sleep(1.2)
+                _sleep()
             except HttpError as e:
-                print(f"[WARN] Echec com theme short '{stitle}' ({sid}): {e}")
+                print(f"[WARN] Echec com thème short '{stitle}' ({sid}): {e}")
 
-    print(f"\nTotal de commentaires postes : {total_comments}")
+    print(f"\nTotal de commentaires postés : {total_comments}")
 
-# === Run ===
+# ===============================
+# RUN
+# ===============================
 if __name__ == "__main__":
     main()
-
-
-

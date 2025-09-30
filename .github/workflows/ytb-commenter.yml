@@ -2,9 +2,9 @@ name: YouTube Auto Commenter
 
 on:
   schedule:
-    # Tous les jours à 09:00 (Paris). 07:00 UTC ≈ 09:00 Europe/Paris (été).
-    - cron: "0 7 * * *"
-  workflow_dispatch: {}   # permet de lancer manuellement
+    # Tous les jours à 17:00 Europe/Paris (≈ 15:00 UTC en été)
+    - cron: "0 15 * * *"
+  workflow_dispatch: {}
 
 jobs:
   run:
@@ -32,15 +32,15 @@ jobs:
       - name: Restore token_comment.json from secret
         run: |
           echo "$YT_TOKEN_JSON" > token_comment.json
-          python - << 'PY'
-import json, sys
-try:
-    d = json.load(open("token_comment.json", encoding="utf-8"))
-    assert "refresh_token" in d, "refresh_token manquant"
-    print("token_comment.json OK")
-except Exception as e:
-    print("token_comment.json invalide:", e); sys.exit(1)
-PY
+          python - <<'PY'
+          import json, sys
+          try:
+              d = json.load(open("token_comment.json", encoding="utf-8"))
+              assert "refresh_token" in d, "refresh_token manquant"
+              print("token_comment.json OK")
+          except Exception as e:
+              print("token_comment.json invalide:", e); sys.exit(1)
+          PY
 
       - name: Run script
         run: python comment_multi_channels.py

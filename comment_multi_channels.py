@@ -101,7 +101,7 @@ CHANNEL_TARGETS = [
     "Thinkerview", "Heu?reka", "Draw My Economy", "Institut des Libertes",
     "Les Echos", "BFM Business", "Zone Bourse", "IG France", "TV Finance",
     "Hasheur", "Cryptoast", "Journal du Coin", "Thami Kabbaj", "Young Trader Wealth",
-    "@singeexplique", "@timotheemoiroux", "SébastienKoubar", "@Shubham_Sharma",
+    "@singeexplique", "@timotheemoiroux", "SébastienKoubar", "@Shubham_Sharma", "@sanspermissionpodcast"
 ]
 
 # ---------- PARAMS RECHERCHE THÈME (autres jours) ----------
@@ -383,4 +383,5 @@ def main():
 # === Run ===
 if __name__ == "__main__":
     main()
+
 

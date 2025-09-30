@@ -18,8 +18,78 @@ TOKEN_FILE    = "token_comment.json"
 
 # ---------- COMMENTAIRES ----------
 # (Les emojis dans les commentaires YouTube sont OK, on les garde)
-COMMENT_TEXT_VIDEO = "super la video 🚀"
-COMMENT_TEXT_SHORT = "super le short 🎯"
+# ---------- COMMENTAIRES ----------
+# Commentaires réalistes + mention occasionnelle de ta chaîne
+import random, datetime as _dt
+
+SUB_LINK = "https://youtube.com/@MrPlavon?sub_confirmation=1"
+_utm = _dt.datetime.utcnow().strftime("%Y%m%d")
+SUB_LINK_UTM = f"{SUB_LINK}&utm_source=yt_comments&utm_medium=bot&utm_campaign=auto_{_utm}"
+
+# Réglages "naturels" (diminue si tu veux être encore plus safe)
+INCLUDE_LINK_RATIO  = 0.22   # ~22% des coms ajoutent le lien
+SELF_MENTION_RATIO  = 0.35   # ~35% des coms mentionnent ta chaîne (sans forcément le lien)
+EMOJI_RATIO         = 0.30   # ~30% des coms avec 1–3 emojis
+MAX_EMOJIS          = 3
+
+EMOJI_POOL = ["🔥","🚀","👏","💡","🎯","📈","👌","🙌","✨"]
+
+PREFIXES = ["", "Franchement, ", "Honnêtement, ", "Pour être sincère, "]
+CLOSERS  = ["", " Merci pour le partage.", " Hâte de voir la suite.", " Beau taf."]
+
+SELF_MENTIONS = [
+    " Je fais du contenu dans la même vibe sur ma chaîne.",
+    " Je publie des analyses similaires, ça peut t’intéresser.",
+    " Je teste des formats proches sur ma chaîne si ça te parle.",
+    " Je poste des débriefs similaires de mon côté.",
+]
+
+def _maybe_link():
+    return f" (si ça t’intéresse : {SUB_LINK_UTM})" if random.random() < INCLUDE_LINK_RATIO else ""
+
+def _maybe_emojis():
+    if random.random() > EMOJI_RATIO:
+        return ""
+    k = random.randint(1, MAX_EMOJIS)
+    return " " + "".join(random.sample(EMOJI_POOL, k))
+
+def _maybe_self_mention():
+    return random.choice(SELF_MENTIONS) if random.random() < SELF_MENTION_RATIO else ""
+
+def _polish(text: str, max_len: int = 230) -> str:
+    t = " ".join(text.split())
+    return (t[: max_len - 1] + "…") if len(t) > max_len else t
+
+VIDEO_TEMPLATES = [
+    "{p}super clair et concret, j’ai pris 2–3 idées actionnables.{self}{link}{e}{c}",
+    "{p}bon rythme et explications simples, ça donne envie de tester direct.{self}{link}{e}{c}",
+    "{p}j’ai bien aimé la partie stratégie, ça m’a fait réfléchir.{self}{link}{e}{c}",
+    "{p}zéro bla-bla, juste l’essentiel. tu feras un suivi sur ce sujet ?{self}{link}{e}{c}",
+    "{p}merci pour la valeur, j’applique ça dès aujourd’hui.{self}{link}{e}{c}",
+    "{p}bonne synthèse, curieux d’une version plus avancée.{self}{link}{e}{c}",
+]
+
+SHORT_TEMPLATES = [
+    "{p}format efficace, message clair en 60s, j’aime beaucoup.{self}{link}{e}{c}",
+    "{p}bonne punchline, action simple à faire maintenant.{self}{link}{e}{c}",
+    "{p}court et utile, parfait pour s’y mettre sans se perdre.{self}{link}{e}{c}",
+    "{p}très direct, ça motive à passer à l’action tout de suite.{self}{link}{e}{c}",
+    "{p}petite pépite, je garde l’idée pour la semaine.{self}{link}{e}{c}",
+]
+
+def _mk_comment(templates):
+    base = random.choice(templates)
+    txt = base.format(
+        p=random.choice(PREFIXES),
+        self=_maybe_self_mention(),
+        link=_maybe_link(),
+        e=_maybe_emojis(),
+        c=random.choice(CLOSERS),
+    )
+    return _polish(txt)
+
+COMMENT_TEXT_VIDEO = _mk_comment(VIDEO_TEMPLATES)
+COMMENT_TEXT_SHORT = _mk_comment(SHORT_TEMPLATES)
 
 # ---------- 50 cibles FR (Business/Finance/Mindset/eco/Crypto) ----------
 # Test court pour valider le flux
@@ -250,3 +320,4 @@ for target in CHANNEL_TARGETS:
     time.sleep(1.5)
 
 print(f"\nTotal de commentaires postes : {total_comments}")
+

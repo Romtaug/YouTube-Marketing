@@ -117,13 +117,18 @@ CHANNEL_TARGETS = [
 # RECHERCHE THÈMES (autres jours)
 # ===============================
 THEME_QUERIES = [
-    "argent investissement IA business",
-    "gagner de l'argent IA",
-    "business en ligne 2025",
-    "investissement débutant",
-    "finance personnelle france",
-    "entrepreneuriat astuces",
+    "actualité financière", "dette", "IA", "Agent IA", "trading en france", "investissement", "économie", "stoicisme",
+    "business en ligne", "crypto en france", "immobilier", "ingénieur data", "bourse", "libéralisme", "pragmatisme",
+    "entrepreneuriat", "dev perso", "patrimoine", "gagnant", "fintech", "néobanque", "vidéo de motivation", "aller à Dubaï",
+    "revenus passifs", "indépendance financière", "fiscalité france", "assurance vie", "ETF", "obligations françaises",
+    "intelligence artificielle", "automatisation no-code", "growth hacking", "side hustle", "start-up française", "podcast business",
+    "blockchain en france", "web3 france", "productivité quotidienne", "habitudes millionnaires", "mindset d'entrepreneur",
+    "résilience mentale", "travail au luxembourg", "expatriation suisse", "freelance data", "consultant stratégie",
+    "intelligence financière", "revenus en ligne", "cryptomonnaies", "gestion du temps", "succès entrepreneurial"
 ]
+
+
+
 SEARCH_RELEVANCE_LANG = "fr"
 SEARCH_REGION_CODE    = "FR"   # commente si trop restrictif
 SEARCH_PUBLISHED_AFTER_DAYS = 30  # élargit la moisson
@@ -438,3 +443,4 @@ def main():
 # ===============================
 if __name__ == "__main__":
     main()
+

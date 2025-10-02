@@ -245,6 +245,10 @@ def find_last_video_and_short(yt, uploads_id):
             break
     return last_video, last_short
 
+# NEW: helper pour construire l'URL vidéo complète
+def video_url(video_id: str) -> str:
+    return f"https://www.youtube.com/watch?v={video_id}"
+
 # ===============================
 # RECHERCHE THÈMES – multi-requêtes & 2 passes
 # ===============================
@@ -358,7 +362,7 @@ def main():
                 if vid not in already_done:
                     try:
                         resp = comment(yt, vid, make_comment_for_video())
-                        print(f"[OK] Liste: video '{title}' -> {resp['id']}")
+                        print(f"[OK] Liste: video '{title}' -> {video_url(vid)}  (comment: {resp['id']})")
                         total_comments += 1; vids_needed -= 1; already_done.add(vid)
                         _sleep()
                     except HttpError as e:
@@ -369,7 +373,7 @@ def main():
                 if sid not in already_done:
                     try:
                         resp = comment(yt, sid, make_comment_for_short())
-                        print(f"[OK] Liste: short '{stitle}' -> {resp['id']}")
+                        print(f"[OK] Liste: short '{stitle}' -> {video_url(sid)}  (comment: {resp['id']})")
                         total_comments += 1; shorts_needed -= 1; already_done.add(sid)
                         _sleep()
                     except HttpError as e:
@@ -386,7 +390,7 @@ def main():
                 if vid in already_done: continue
                 try:
                     resp = comment(yt, vid, make_comment_for_video())
-                    print(f"[OK] Thème: video '{title}' -> {resp['id']}")
+                    print(f"[OK] Thème: video '{title}' -> {video_url(vid)}  (comment: {resp['id']})")
                     total_comments += 1; already_done.add(vid)
                     _sleep()
                 except HttpError as e:
@@ -397,7 +401,7 @@ def main():
                 if sid in already_done: continue
                 try:
                     resp = comment(yt, sid, make_comment_for_short())
-                    print(f"[OK] Thème: short '{stitle}' -> {resp['id']}")
+                    print(f"[OK] Thème: short '{stitle}' -> {video_url(sid)}  (comment: {resp['id']})")
                     total_comments += 1; already_done.add(sid)
                     _sleep()
                 except HttpError as e:
@@ -411,7 +415,7 @@ def main():
             if total_comments >= MAX_COMMENTS_PER_RUN: break
             try:
                 resp = comment(yt, vid, make_comment_for_video())
-                print(f"[OK] Thème: video '{title}' -> {resp['id']}")
+                print(f"[OK] Thème: video '{title}' -> {video_url(vid)}  (comment: {resp['id']})")
                 total_comments += 1
                 _sleep()
             except HttpError as e:
@@ -421,7 +425,7 @@ def main():
             if total_comments >= MAX_COMMENTS_PER_RUN: break
             try:
                 resp = comment(yt, sid, make_comment_for_short())
-                print(f"[OK] Thème: short '{stitle}' -> {resp['id']}")
+                print(f"[OK] Thème: short '{stitle}' -> {video_url(sid)}  (comment: {resp['id']})")
                 total_comments += 1
                 _sleep()
             except HttpError as e:

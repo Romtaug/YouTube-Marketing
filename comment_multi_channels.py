@@ -104,7 +104,7 @@ CHANNEL_TARGETS = [
     "Riche à 30 ans", "Investir Simple", "Le Revenu", "Capital",
     "David Laroche", "Franck Nicolas", "Alexandre Cormont", "Idriss Aberkane",
     "Jean Laval", "Laurent Chenot", "Emmanuel Fredenrich", "Anthony Nevo",
-    "Pauline Laigneau", "Mind Parachutes",
+    "Pauline Laigneau", "Mind Parachutes", "@ego_one", "@LaMenaceVlogs",
     "Thinkerview", "Heu?reka", "Draw My Economy", "Institut des Libertes",
     "Les Echos", "BFM Business", "Zone Bourse", "IG France", "TV Finance",
     "Hasheur", "Cryptoast", "Journal du Coin", "Thami Kabbaj", "Young Trader Wealth",
@@ -127,8 +127,6 @@ THEME_QUERIES = [
     "intelligence financière", "revenus en ligne", "cryptomonnaies", "gestion du temps", "succès entrepreneurial"
 ]
 
-
-
 SEARCH_RELEVANCE_LANG = "fr"
 SEARCH_REGION_CODE    = "FR"   # commente si trop restrictif
 SEARCH_PUBLISHED_AFTER_DAYS = 30  # élargit la moisson
@@ -142,6 +140,37 @@ SLEEP_MIN, SLEEP_MAX  = 1.2, 3.0   # jitter entre commentaires
 
 # Override pour tester le mode “vendredi”
 IS_FRIDAY_OVERRIDE = os.getenv("FORCE_FRIDAY") == "1"
+
+# ===============================
+# HELPERS RÉSEAU / API ROBUSTES
+# ===============================
+def _exec(req, retries=3, delay=1.0):
+    """Exécute une requête YouTube avec un léger retry/backoff et gère les 4xx/5xx."""
+    for i in range(retries):
+        try:
+            return req.execute()
+        except HttpError as e:
+            status = getattr(e, "status_code", None) or getattr(e.resp, "status", None)
+            # 4xx souvent définitifs (permissions, not found, etc.)
+            if status in (400, 401, 403, 404):
+                if i == retries - 1:
+                    raise
+                time.sleep(delay * (i + 1))
+            else:
+                # 5xx / transient
+                if i == retries - 1:
+                    raise
+                time.sleep(delay * (i + 1))
+
+def _is_live_or_upcoming(snippet, live_streaming_details):
+    # Détection fiable live / upcoming
+    if live_streaming_details and any(k in live_streaming_details for k in ("actualStartTime", "scheduledStartTime")):
+        return True
+    lbc = (snippet or {}).get("liveBroadcastContent")
+    return lbc in ("live", "upcoming")
+
+def _is_kids(status):
+    return bool((status or {}).get("madeForKids"))
 
 # ===============================
 # AUTH
@@ -192,55 +221,73 @@ def iso_to_seconds(iso):
 
 def comment(yt, video_id, text):
     body = {"snippet": {"videoId": video_id, "topLevelComment": {"snippet": {"textOriginal": text}}}}
-    return yt.commentThreads().insert(part="snippet", body=body).execute()
+    return _exec(yt.commentThreads().insert(part="snippet", body=body))
 
 def resolve_uploads_playlist(yt, target: str):
     t = target.strip()
     if t.startswith("@"):
         h = t[1:]
-        ch = yt.channels().list(part="id,snippet,contentDetails", forHandle=h).execute()
+        ch = _exec(yt.channels().list(part="id,snippet,contentDetails", forHandle=h))
         items = ch.get("items", [])
         if not items:
             raise ValueError(f"Handle introuvable: {t}")
         c = items[0]
-        upl = c["contentDetails"]["relatedPlaylists"]["uploads"]
+        upl = c["contentDetails"]["relatedPlaylists"].get("uploads")
+        if not upl:
+            raise ValueError(f"Pas de playlist 'uploads' pour {t}")
         return upl, c["snippet"]["title"], c["id"]
 
-    sr = yt.search().list(part="snippet", q=t, type="channel", maxResults=1).execute()
+    sr = _exec(yt.search().list(part="snippet", q=t, type="channel", maxResults=1))
     sitems = sr.get("items", [])
     if not sitems:
         raise ValueError(f"Chaîne introuvable via recherche: {t}")
     channel_id = sitems[0]["snippet"]["channelId"]
-    ch = yt.channels().list(part="id,snippet,contentDetails", id=channel_id).execute()
+    ch = _exec(yt.channels().list(part="id,snippet,contentDetails", id=channel_id))
     items = ch.get("items", [])
     if not items:
         raise ValueError(f"Impossible de charger la chaîne: {t} ({channel_id})")
     c = items[0]
-    upl = c["contentDetails"]["relatedPlaylists"]["uploads"]
+    upl = c["contentDetails"]["relatedPlaylists"].get("uploads")
+    if not upl:
+        raise ValueError(f"Pas de playlist 'uploads' pour {t}")
     return upl, c["snippet"]["title"], c["id"]
 
 def find_last_video_and_short(yt, uploads_id):
-    items = yt.playlistItems().list(
-        part="contentDetails", playlistId=uploads_id, maxResults=50
-    ).execute().get("items", [])
+    try:
+        items = _exec(yt.playlistItems().list(
+            part="contentDetails", playlistId=uploads_id, maxResults=50
+        )).get("items", [])
+    except HttpError as e:
+        print(f"[WARN] Playlist introuvable/privée '{uploads_id}': {e}")
+        return None, None
+
     if not items:
         return None, None
 
     video_ids = [it["contentDetails"]["videoId"] for it in items]
     details = {}
     for i in range(0, len(video_ids), 50):
-        chunk = video_ids[i:i+50]
-        resp = yt.videos().list(part="contentDetails,snippet", id=",".join(chunk)).execute()
+        chunk = ",".join(video_ids[i:i+50])
+        resp = _exec(yt.videos().list(
+            part="contentDetails,snippet,status,liveStreamingDetails",
+            id=chunk
+        ))
         for it in resp.get("items", []):
             details[it["id"]] = {
                 "duration_s": iso_to_seconds(it["contentDetails"]["duration"]),
-                "title": it["snippet"]["title"]
+                "title": it["snippet"]["title"],
+                "snippet": it["snippet"],
+                "status": it.get("status"),
+                "lsd": it.get("liveStreamingDetails"),
             }
 
     last_video = last_short = None
     for vid in video_ids:
         d = details.get(vid)
         if not d:
+            continue
+        # Filtrage live/upcoming + madeForKids
+        if _is_live_or_upcoming(d["snippet"], d["lsd"]) or _is_kids(d["status"]):
             continue
         if d["duration_s"] >= 60 and last_video is None:
             last_video = (vid, d["title"])
@@ -284,19 +331,30 @@ def search_theme_collect(yt, query_or_queries, need_videos=50, need_shorts=50):
                 if page_token:
                     params["pageToken"] = page_token
 
-                res = yt.search().list(**params).execute()
+                res = _exec(yt.search().list(**params))
                 items = res.get("items", [])
                 ids = [it["id"]["videoId"] for it in items if it["id"]["kind"] == "youtube#video"]
                 if not ids:
                     break
 
-                det = yt.videos().list(part="contentDetails,snippet", id=",".join(ids)).execute()
+                det = _exec(yt.videos().list(
+                    part="contentDetails,snippet,status,liveStreamingDetails",
+                    id=",".join(ids)
+                ))
                 for it in det.get("items", []):
                     vid = it["id"]
                     if vid in seen_ids:
                         continue
                     dur = iso_to_seconds(it["contentDetails"]["duration"])
                     title = it["snippet"]["title"]
+                    snippet = it["snippet"]
+                    status = it.get("status")
+                    lsd = it.get("liveStreamingDetails")
+
+                    # Filtrer lives / upcoming / kids
+                    if _is_live_or_upcoming(snippet, lsd) or _is_kids(status):
+                        continue
+
                     if dur < 60 and len(shorts) < need_shorts:
                         shorts.append((vid, title)); seen_ids.add(vid)
                     elif dur >= 60 and len(videos) < need_videos:
@@ -352,7 +410,7 @@ def main():
         vids_needed, shorts_needed = 50, 50
 
         for target in CHANNEL_TARGETS:
-            if vids_needed <= 0 and shorts_needed <= 0 or total_comments >= MAX_COMMENTS_PER_RUN:
+            if (vids_needed <= 0 and shorts_needed <= 0) or total_comments >= MAX_COMMENTS_PER_RUN:
                 break
             try:
                 uploads_id, channel_title, _ = resolve_uploads_playlist(yt, target)
@@ -443,5 +501,3 @@ def main():
 # ===============================
 if __name__ == "__main__":
     main()
-
-

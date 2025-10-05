@@ -27,9 +27,9 @@ _utm = _dt.datetime.utcnow().strftime("%Y%m%d")
 SUB_LINK_UTM = f"{SUB_LINK}&utm_source=yt_comments&utm_medium=bot&utm_campaign=auto_{_utm}"
 
 # Ratios (ajuste si tu veux être plus/moins agressif)
-INCLUDE_LINK_RATIO  = 0.22   # % de commentaires avec le lien d’abo
-SELF_MENTION_RATIO  = 0.35   # % avec mention “je fais du contenu similaire”
-EMOJI_RATIO         = 0.30   # % avec 1–3 emojis
+INCLUDE_LINK_RATIO  = 0.25   # % de commentaires avec le lien d’abo
+SELF_MENTION_RATIO  = 0.45   # % avec mention “je fais du contenu similaire”
+EMOJI_RATIO         = 0.5   # % avec 1–3 emojis
 MAX_EMOJIS          = 3
 EMOJI_POOL = ["🔥","🚀","👏","💡","🎯","📈","👌","🙌","✨"]
 
@@ -38,7 +38,7 @@ CLOSERS  = ["", " Merci pour le partage.", " Hâte de voir la suite.", " Beau ta
 
 SELF_MENTIONS = [
     " Je fais du contenu dans la même vibe sur ma chaîne.",
-    " Je publie des analyses similaires, ça peut t’intéresser.",
+    " Je publie des analyses similaires, ça peut vous intéresser.",
     " Je teste des formats proches sur ma chaîne si ça te parle.",
     " Je poste des débriefs similaires de mon côté.",
 ]
@@ -501,3 +501,4 @@ def main():
 # ===============================
 if __name__ == "__main__":
     main()
+

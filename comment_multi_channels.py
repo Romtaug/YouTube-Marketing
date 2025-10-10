@@ -131,7 +131,7 @@ SEARCH_RELEVANCE_LANG = "fr"
 SEARCH_REGION_CODE    = "FR"   # commente si trop restrictif
 SEARCH_PUBLISHED_AFTER_DAYS = 30  # élargit la moisson
 SEARCH_PAGE_LIMIT     = 20       # jusqu’à ~1000 résultats bruts/req
-NEED_VIDEOS           = 50       # >= 60s
+NEED_VIDEOS           = 45       # >= 60s
 NEED_SHORTS           = 45       # < 60s
 
 # Sécurité & anti-spam
@@ -501,5 +501,6 @@ def main():
 # ===============================
 if __name__ == "__main__":
     main()
+
 
 

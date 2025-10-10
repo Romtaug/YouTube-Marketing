@@ -44,20 +44,20 @@ SELF_MENTIONS = [
 ]
 
 VIDEO_TEMPLATES = [
-    "{p}super clair et concret, j’ai pris 2–3 idées actionnables.{self}{link}{e}{c}",
-    "{p}bon rythme et explications simples, ça donne envie de tester direct.{self}{link}{e}{c}",
-    "{p}j’ai bien aimé la partie stratégie, ça m’a fait réfléchir.{self}{link}{e}{c}",
-    "{p}zéro bla-bla, juste l’essentiel. tu feras un suivi sur ce sujet ?{self}{link}{e}{c}",
-    "{p}merci pour la valeur, j’applique ça dès aujourd’hui.{self}{link}{e}{c}",
-    "{p}bonne synthèse, curieux d’une version plus avancée.{self}{link}{e}{c}",
+    "{p}Super clair et concret, j’ai pris 2–3 idées actionnables.{self}{link}{e}{c}",
+    "{p}Bon rythme et explications simples, ça donne envie de tester direct.{self}{link}{e}{c}",
+    "{p}J’ai bien aimé la partie stratégie, ça m’a fait réfléchir.{self}{link}{e}{c}",
+    "{p}Zéro bla-bla, juste l’essentiel. tu feras un suivi sur ce sujet ?{self}{link}{e}{c}",
+    "{p}Merci pour la valeur, j’applique ça dès aujourd’hui.{self}{link}{e}{c}",
+    "{p}Bonne synthèse, curieux d’une version plus avancée.{self}{link}{e}{c}",
 ]
 
 SHORT_TEMPLATES = [
-    "{p}format efficace, message clair en 60s, j’aime beaucoup.{self}{link}{e}{c}",
-    "{p}bonne punchline, action simple à faire maintenant.{self}{link}{e}{c}",
-    "{p}court et utile, parfait pour s’y mettre sans se perdre.{self}{link}{e}{c}",
-    "{p}très direct, ça motive à passer à l’action tout de suite.{self}{link}{e}{c}",
-    "{p}petite pépite, je garde l’idée pour la semaine.{self}{link}{e}{c}",
+    "{p}Format efficace, message clair en 60s, j’aime beaucoup.{self}{link}{e}{c}",
+    "{p}Bonne punchline, action simple à faire maintenant.{self}{link}{e}{c}",
+    "{p}Court et utile, parfait pour s’y mettre sans se perdre.{self}{link}{e}{c}",
+    "{p}Très direct, ça motive à passer à l’action tout de suite.{self}{link}{e}{c}",
+    "{p}Petite pépite, je garde l’idée pour la semaine.{self}{link}{e}{c}",
 ]
 
 def _maybe_link():
@@ -132,7 +132,7 @@ SEARCH_REGION_CODE    = "FR"   # commente si trop restrictif
 SEARCH_PUBLISHED_AFTER_DAYS = 30  # élargit la moisson
 SEARCH_PAGE_LIMIT     = 20       # jusqu’à ~1000 résultats bruts/req
 NEED_VIDEOS           = 50       # >= 60s
-NEED_SHORTS           = 50       # < 60s
+NEED_SHORTS           = 45       # < 60s
 
 # Sécurité & anti-spam
 MAX_COMMENTS_PER_RUN  = 120
@@ -501,4 +501,5 @@ def main():
 # ===============================
 if __name__ == "__main__":
     main()
+
 

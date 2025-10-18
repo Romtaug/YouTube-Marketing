@@ -9,6 +9,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 import os, json, isodate, time, random, datetime as _dt
+from typing import List, Tuple, Optional, Dict, Any
 
 # ===============================
 # CONFIG AUTH
@@ -29,7 +30,7 @@ SUB_LINK_UTM = f"{SUB_LINK}&utm_source=yt_comments&utm_medium=bot&utm_campaign=a
 # Ratios (ajuste si tu veux être plus/moins agressif)
 INCLUDE_LINK_RATIO  = 0.25   # % de commentaires avec le lien d’abo
 SELF_MENTION_RATIO  = 0.45   # % avec mention “je fais du contenu similaire”
-EMOJI_RATIO         = 0.5   # % avec 1–3 emojis
+EMOJI_RATIO         = 0.5    # % avec 1–3 emojis
 MAX_EMOJIS          = 3
 EMOJI_POOL = ["🔥","🚀","👏","💡","🎯","📈","👌","🙌","✨"]
 
@@ -60,23 +61,23 @@ SHORT_TEMPLATES = [
     "{p}Petite pépite, je garde l’idée pour la semaine.{self}{link}{e}{c}",
 ]
 
-def _maybe_link():
+def _maybe_link() -> str:
     return f" (si ça t’intéresse : {SUB_LINK_UTM})" if random.random() < INCLUDE_LINK_RATIO else ""
 
-def _maybe_emojis():
+def _maybe_emojis() -> str:
     if random.random() > EMOJI_RATIO:
         return ""
     k = random.randint(1, MAX_EMOJIS)
     return " " + "".join(random.sample(EMOJI_POOL, k))
 
-def _maybe_self_mention():
+def _maybe_self_mention() -> str:
     return random.choice(SELF_MENTIONS) if random.random() < SELF_MENTION_RATIO else ""
 
 def _polish(text: str, max_len: int = 230) -> str:
     t = " ".join(text.split())
     return (t[: max_len - 1] + "…") if len(t) > max_len else t
 
-def make_comment_for_video():
+def make_comment_for_video() -> str:
     base = random.choice(VIDEO_TEMPLATES)
     txt = base.format(
         p=random.choice(PREFIXES), self=_maybe_self_mention(),
@@ -84,7 +85,7 @@ def make_comment_for_video():
     )
     return _polish(txt)
 
-def make_comment_for_short():
+def make_comment_for_short() -> str:
     base = random.choice(SHORT_TEMPLATES)
     txt = base.format(
         p=random.choice(PREFIXES), self=_maybe_self_mention(),
@@ -95,7 +96,7 @@ def make_comment_for_short():
 # ===============================
 # LISTE CHAÎNES (mode vendredi)
 # ===============================
-CHANNEL_TARGETS = [
+CHANNEL_TARGETS: List[str] = [
     "Yomi Denzel", "Theophile Eliet", "@oussamaammaroff", "Enzo Honore",
     "Olivier Roland", "Marketing Mania", "Business Dynamite", "Le Marketeur Français",
     "Tugan Bara", "Antoine BM", "Jean Riviere", "Alexandre Roth",
@@ -116,7 +117,7 @@ CHANNEL_TARGETS = [
 # ===============================
 # RECHERCHE THÈMES (autres jours)
 # ===============================
-THEME_QUERIES = [
+THEME_QUERIES: List[str] = [
     "actualité financière", "dette", "IA", "Agent IA", "trading en france", "investissement", "économie", "stoicisme",
     "business en ligne", "crypto en france", "immobilier", "ingénieur data", "bourse", "libéralisme", "pragmatisme",
     "entrepreneuriat", "dev perso", "patrimoine", "gagnant", "fintech", "néobanque", "vidéo de motivation", "aller à Dubaï",
@@ -144,38 +145,58 @@ IS_FRIDAY_OVERRIDE = os.getenv("FORCE_FRIDAY") == "1"
 # ===============================
 # HELPERS RÉSEAU / API ROBUSTES
 # ===============================
-def _exec(req, retries=3, delay=1.0):
-    """Exécute une requête YouTube avec un léger retry/backoff et gère les 4xx/5xx."""
+TRANSIENT_REASONS = {
+    "rateLimitExceeded", "quotaExceeded", "backendError",
+    "internalError", "badGateway", "timeout", "dailyLimitExceeded",
+}
+
+def _reason_of_http_error(e: HttpError) -> str:
+    try:
+        data = json.loads(e.content.decode("utf-8"))
+        errs = data.get("error", {}).get("errors", [])
+        if errs:
+            return f"{errs[0].get('reason')} – {errs[0].get('message')}"
+        return data.get("error", {}).get("message", str(e))
+    except Exception:
+        return str(e)
+
+def _exec(req, retries: int = 4, delay: float = 1.0):
+    """Exécute une requête YouTube avec retry/backoff, gère 4xx/5xx proprement."""
     for i in range(retries):
         try:
             return req.execute()
         except HttpError as e:
             status = getattr(e, "status_code", None) or getattr(e.resp, "status", None)
-            # 4xx souvent définitifs (permissions, not found, etc.)
-            if status in (400, 401, 403, 404):
+            reason = _reason_of_http_error(e)
+            # 4xx définitifs (souvent), mais certaines raisons peuvent être transientes
+            if status and 400 <= int(status) < 500 and not any(r in reason for r in TRANSIENT_REASONS):
                 if i == retries - 1:
+                    print(f"[ERROR] HTTP {status} (definitif): {reason}")
                     raise
                 time.sleep(delay * (i + 1))
             else:
-                # 5xx / transient
+                # 5xx / transients (ou 4xx avec reason transiente)
                 if i == retries - 1:
+                    print(f"[ERROR] HTTP {status}: {reason}")
                     raise
-                time.sleep(delay * (i + 1))
+                sleep_s = delay * (i + 1) * (1.5 + random.random())
+                print(f"[WARN] HTTP {status}: {reason} → retry in {sleep_s:.1f}s")
+                time.sleep(sleep_s)
 
-def _is_live_or_upcoming(snippet, live_streaming_details):
+def _is_live_or_upcoming(snippet: Dict[str, Any], live_streaming_details: Dict[str, Any]) -> bool:
     # Détection fiable live / upcoming
     if live_streaming_details and any(k in live_streaming_details for k in ("actualStartTime", "scheduledStartTime")):
         return True
     lbc = (snippet or {}).get("liveBroadcastContent")
     return lbc in ("live", "upcoming")
 
-def _is_kids(status):
+def _is_kids(status: Dict[str, Any]) -> bool:
     return bool((status or {}).get("madeForKids"))
 
 # ===============================
 # AUTH
 # ===============================
-def _load_token(path, scopes):
+def _load_token(path: str, scopes: List[str]) -> Optional[oauth2.Credentials]:
     if not os.path.exists(path):
         return None
     try:
@@ -216,15 +237,21 @@ def auth_youtube():
 # ===============================
 # HELPERS API
 # ===============================
-def iso_to_seconds(iso):
+def iso_to_seconds(iso: str) -> int:
     return int(isodate.parse_duration(iso).total_seconds())
 
-def comment(yt, video_id, text):
+def comment(yt, video_id: str, text: str):
     body = {"snippet": {"videoId": video_id, "topLevelComment": {"snippet": {"textOriginal": text}}}}
     return _exec(yt.commentThreads().insert(part="snippet", body=body))
 
-def resolve_uploads_playlist(yt, target: str):
-    t = target.strip()
+def resolve_uploads_playlist(yt, target: str) -> Tuple[str, str, str]:
+    """
+    Retourne: (uploads_playlist_id, channel_title, channel_id)
+    Gère @handle ou recherche par nom.
+    """
+    t = (target or "").strip()
+    if not t:
+        raise ValueError("Cible chaîne vide.")
     if t.startswith("@"):
         h = t[1:]
         ch = _exec(yt.channels().list(part="id,snippet,contentDetails", forHandle=h))
@@ -232,11 +259,11 @@ def resolve_uploads_playlist(yt, target: str):
         if not items:
             raise ValueError(f"Handle introuvable: {t}")
         c = items[0]
-        upl = c["contentDetails"]["relatedPlaylists"].get("uploads")
+        upl = (c.get("contentDetails") or {}).get("relatedPlaylists", {}).get("uploads")
         if not upl:
             raise ValueError(f"Pas de playlist 'uploads' pour {t}")
-        return upl, c["snippet"]["title"], c["id"]
-
+        return upl, (c.get("snippet") or {}).get("title", t), c.get("id", "")
+    # recherche par nom
     sr = _exec(yt.search().list(part="snippet", q=t, type="channel", maxResults=1))
     sitems = sr.get("items", [])
     if not sitems:
@@ -247,25 +274,39 @@ def resolve_uploads_playlist(yt, target: str):
     if not items:
         raise ValueError(f"Impossible de charger la chaîne: {t} ({channel_id})")
     c = items[0]
-    upl = c["contentDetails"]["relatedPlaylists"].get("uploads")
+    upl = (c.get("contentDetails") or {}).get("relatedPlaylists", {}).get("uploads")
     if not upl:
         raise ValueError(f"Pas de playlist 'uploads' pour {t}")
-    return upl, c["snippet"]["title"], c["id"]
+    return upl, (c.get("snippet") or {}).get("title", t), c.get("id", channel_id)
 
-def find_last_video_and_short(yt, uploads_id):
+def find_last_video_and_short(yt, uploads_id: str) -> Tuple[Optional[Tuple[str, str]], Optional[Tuple[str, str]]]:
+    """
+    Récupère la dernière vidéo >=60s ET le dernier short <60s,
+    en ignorant lives/upcoming, madeForKids et vidéos sans contentDetails.duration.
+    Retourne: ( (video_id, title) | None, (short_id, title) | None )
+    """
     try:
         items = _exec(yt.playlistItems().list(
             part="contentDetails", playlistId=uploads_id, maxResults=50
         )).get("items", [])
     except HttpError as e:
-        print(f"[WARN] Playlist introuvable/privée '{uploads_id}': {e}")
+        print(f"[WARN] Playlist introuvable/privée '{uploads_id}': {_reason_of_http_error(e)}")
         return None, None
 
     if not items:
         return None, None
 
-    video_ids = [it["contentDetails"]["videoId"] for it in items]
-    details = {}
+    video_ids = []
+    for it in items:
+        cd = it.get("contentDetails") or {}
+        vid = cd.get("videoId")
+        if vid:
+            video_ids.append(vid)
+
+    if not video_ids:
+        return None, None
+
+    details: Dict[str, Dict[str, Any]] = {}
     for i in range(0, len(video_ids), 50):
         chunk = ",".join(video_ids[i:i+50])
         resp = _exec(yt.videos().list(
@@ -273,28 +314,54 @@ def find_last_video_and_short(yt, uploads_id):
             id=chunk
         ))
         for it in resp.get("items", []):
-            details[it["id"]] = {
-                "duration_s": iso_to_seconds(it["contentDetails"]["duration"]),
-                "title": it["snippet"]["title"],
-                "snippet": it["snippet"],
-                "status": it.get("status"),
-                "lsd": it.get("liveStreamingDetails"),
+            vid = it.get("id")
+            cdet = it.get("contentDetails") or {}
+            sni  = it.get("snippet") or {}
+            stat = it.get("status") or {}
+            lsd  = it.get("liveStreamingDetails") or {}
+
+            dur_iso = cdet.get("duration")
+            if not dur_iso:
+                # Ex: vidéo privée/members-only/supprimée/restrictions → pas de duration
+                print(f"[WARN] Vidéo sans duration, ignorée: id={vid} title={sni.get('title')!r}")
+                continue
+
+            try:
+                dur_s = iso_to_seconds(dur_iso)
+            except Exception:
+                print(f"[WARN] Duration illisible {dur_iso!r} pour id={vid}, ignorée.")
+                continue
+
+            # Filtre live/upcoming/kids
+            if _is_live_or_upcoming(sni, lsd) or _is_kids(stat):
+                continue
+
+            details[vid] = {
+                "duration_s": dur_s,
+                "title": sni.get("title", ""),
+                "snippet": sni,
+                "status": stat,
+                "lsd": lsd,
             }
 
-    last_video = last_short = None
+    if not details:
+        return None, None
+
+    last_video: Optional[Tuple[str, str]] = None
+    last_short: Optional[Tuple[str, str]] = None
+
+    # On respecte l’ordre de la playlist (déjà du plus récent au moins)
     for vid in video_ids:
         d = details.get(vid)
         if not d:
             continue
-        # Filtrage live/upcoming + madeForKids
-        if _is_live_or_upcoming(d["snippet"], d["lsd"]) or _is_kids(d["status"]):
-            continue
         if d["duration_s"] >= 60 and last_video is None:
             last_video = (vid, d["title"])
-        if d["duration_s"] < 60 and last_short is None:
+        elif d["duration_s"] < 60 and last_short is None:
             last_short = (vid, d["title"])
         if last_video and last_short:
             break
+
     return last_video, last_short
 
 # NEW: helper pour construire l'URL vidéo complète
@@ -304,12 +371,13 @@ def video_url(video_id: str) -> str:
 # ===============================
 # RECHERCHE THÈMES – multi-requêtes & 2 passes
 # ===============================
-def search_theme_collect(yt, query_or_queries, need_videos=50, need_shorts=50):
+def search_theme_collect(yt, query_or_queries, need_videos=50, need_shorts=50) -> Tuple[List[Tuple[str,str]], List[Tuple[str,str]]]:
     import datetime as _dt
     queries = query_or_queries if isinstance(query_or_queries, list) else [query_or_queries]
 
-    def _collect(order_mode, use_published_after=True):
-        videos, shorts = [], []
+    def _collect(order_mode: str, use_published_after: bool = True):
+        videos: List[Tuple[str,str]] = []
+        shorts: List[Tuple[str,str]] = []
         seen_ids = set()
         published_after_iso = None
         if use_published_after:
@@ -333,7 +401,7 @@ def search_theme_collect(yt, query_or_queries, need_videos=50, need_shorts=50):
 
                 res = _exec(yt.search().list(**params))
                 items = res.get("items", [])
-                ids = [it["id"]["videoId"] for it in items if it["id"]["kind"] == "youtube#video"]
+                ids = [it["id"]["videoId"] for it in items if it.get("id", {}).get("kind") == "youtube#video" and it["id"].get("videoId")]
                 if not ids:
                     break
 
@@ -342,19 +410,29 @@ def search_theme_collect(yt, query_or_queries, need_videos=50, need_shorts=50):
                     id=",".join(ids)
                 ))
                 for it in det.get("items", []):
-                    vid = it["id"]
-                    if vid in seen_ids:
+                    vid = it.get("id")
+                    if not vid or vid in seen_ids:
                         continue
-                    dur = iso_to_seconds(it["contentDetails"]["duration"])
-                    title = it["snippet"]["title"]
-                    snippet = it["snippet"]
-                    status = it.get("status")
-                    lsd = it.get("liveStreamingDetails")
+
+                    cdet = it.get("contentDetails") or {}
+                    sni  = it.get("snippet") or {}
+                    stat = it.get("status") or {}
+                    lsd  = it.get("liveStreamingDetails") or {}
+
+                    dur_iso = cdet.get("duration")
+                    if not dur_iso:
+                        # Vidéos sans duration (privée/members-only etc.)
+                        continue
+                    try:
+                        dur = iso_to_seconds(dur_iso)
+                    except Exception:
+                        continue
 
                     # Filtrer lives / upcoming / kids
-                    if _is_live_or_upcoming(snippet, lsd) or _is_kids(status):
+                    if _is_live_or_upcoming(sni, lsd) or _is_kids(stat):
                         continue
 
+                    title = sni.get("title", "")
                     if dur < 60 and len(shorts) < need_shorts:
                         shorts.append((vid, title)); seen_ids.add(vid)
                     elif dur >= 60 and len(videos) < need_videos:
@@ -377,7 +455,7 @@ def search_theme_collect(yt, query_or_queries, need_videos=50, need_shorts=50):
     V2, S2 = _collect(order_mode="relevance", use_published_after=False)
 
     # Merge & tronque
-    def _merge_take(A, B, n):
+    def _merge_take(A: List[Tuple[str,str]], B: List[Tuple[str,str]], n: int):
         out, seen = [], set()
         for x in A + B:
             if x[0] in seen: continue
@@ -425,22 +503,22 @@ def main():
                 if vid not in already_done:
                     try:
                         resp = comment(yt, vid, make_comment_for_video())
-                        print(f"[OK] Liste: video '{title}' -> {video_url(vid)}  (comment: {resp['id']})")
+                        print(f"[OK] Liste: video '{title}' -> {video_url(vid)}  (comment: {resp.get('id')})")
                         total_comments += 1; vids_needed -= 1; already_done.add(vid)
                         _sleep()
                     except HttpError as e:
-                        print(f"[WARN] Echec com video '{title}' ({vid}): {e}")
+                        print(f"[WARN] Echec com video '{title}' ({vid}): {_reason_of_http_error(e)}")
 
             if last_short and shorts_needed > 0 and total_comments < MAX_COMMENTS_PER_RUN:
                 sid, stitle = last_short
                 if sid not in already_done:
                     try:
                         resp = comment(yt, sid, make_comment_for_short())
-                        print(f"[OK] Liste: short '{stitle}' -> {video_url(sid)}  (comment: {resp['id']})")
+                        print(f"[OK] Liste: short '{stitle}' -> {video_url(sid)}  (comment: {resp.get('id')})")
                         total_comments += 1; shorts_needed -= 1; already_done.add(sid)
                         _sleep()
                     except HttpError as e:
-                        print(f"[WARN] Echec com short '{stitle}' ({sid}): {e}")
+                        print(f"[WARN] Echec com short '{stitle}' ({sid}): {_reason_of_http_error(e)}")
 
         print(f"Reste (après listes): videos={vids_needed}, shorts={shorts_needed}")
 
@@ -453,22 +531,22 @@ def main():
                 if vid in already_done: continue
                 try:
                     resp = comment(yt, vid, make_comment_for_video())
-                    print(f"[OK] Thème: video '{title}' -> {video_url(vid)}  (comment: {resp['id']})")
+                    print(f"[OK] Thème: video '{title}' -> {video_url(vid)}  (comment: {resp.get('id')})")
                     total_comments += 1; already_done.add(vid)
                     _sleep()
                 except HttpError as e:
-                    print(f"[WARN] Echec com thème video '{title}' ({vid}): {e}")
+                    print(f"[WARN] Echec com thème video '{title}' ({vid}): {_reason_of_http_error(e)}")
 
             for sid, stitle in slist:
                 if total_comments >= MAX_COMMENTS_PER_RUN: break
                 if sid in already_done: continue
                 try:
                     resp = comment(yt, sid, make_comment_for_short())
-                    print(f"[OK] Thème: short '{stitle}' -> {video_url(sid)}  (comment: {resp['id']})")
+                    print(f"[OK] Thème: short '{stitle}' -> {video_url(sid)}  (comment: {resp.get('id')})")
                     total_comments += 1; already_done.add(sid)
                     _sleep()
                 except HttpError as e:
-                    print(f"[WARN] Echec com thème short '{stitle}' ({sid}): {e}")
+                    print(f"[WARN] Echec com thème short '{stitle}' ({sid}): {_reason_of_http_error(e)}")
 
     else:
         print("Mode: recherche par thème (hors vendredi)")
@@ -478,21 +556,21 @@ def main():
             if total_comments >= MAX_COMMENTS_PER_RUN: break
             try:
                 resp = comment(yt, vid, make_comment_for_video())
-                print(f"[OK] Thème: video '{title}' -> {video_url(vid)}  (comment: {resp['id']})")
+                print(f"[OK] Thème: video '{title}' -> {video_url(vid)}  (comment: {resp.get('id')})")
                 total_comments += 1
                 _sleep()
             except HttpError as e:
-                print(f"[WARN] Echec com thème video '{title}' ({vid}): {e}")
+                print(f"[WARN] Echec com thème video '{title}' ({vid}): {_reason_of_http_error(e)}")
 
         for sid, stitle in slist:
             if total_comments >= MAX_COMMENTS_PER_RUN: break
             try:
                 resp = comment(yt, sid, make_comment_for_short())
-                print(f"[OK] Thème: short '{stitle}' -> {video_url(sid)}  (comment: {resp['id']})")
+                print(f"[OK] Thème: short '{stitle}' -> {video_url(sid)}  (comment: {resp.get('id')})")
                 total_comments += 1
                 _sleep()
             except HttpError as e:
-                print(f"[WARN] Echec com thème short '{stitle}' ({sid}): {e}")
+                print(f"[WARN] Echec com thème short '{stitle}' ({sid}): {_reason_of_http_error(e)}")
 
     print(f"\nTotal de commentaires postés : {total_comments}")
 
@@ -501,6 +579,3 @@ def main():
 # ===============================
 if __name__ == "__main__":
     main()
-
-
-

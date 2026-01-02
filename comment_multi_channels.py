@@ -100,7 +100,7 @@ CHANNEL_TARGETS: List[str] = [
     "Yomi Denzel", "Theophile Eliet", "@oussamaammaroff", "Enzo Honore", "@legendmedia",
     "Olivier Roland", "Marketing Mania", "Business Dynamite", "Le Marketeur Français",
     "Tugan Bara", "Antoine BM", "Jean Riviere", "Alexandre Roth", "@Loïcbourget",
-    "Money Radar", "Yann Darwin", "Christopher Wangen", "Pierre Ollier", "@Objectif-Renta"
+    "Money Radar", "Yann Darwin", "Christopher Wangen", "Pierre Ollier", "@Objectif-Renta",
     "Greenbull Campus", "Finary", "S'investir - Matthieu Louvet", "Epargnant 3.0",
     "Riche à 30 ans", "Investir Simple", "Le Revenu", "Capital",
     "David Laroche", "Franck Nicolas", "Alexandre Cormont", "Idriss Aberkane",
@@ -579,4 +579,5 @@ def main():
 # ===============================
 if __name__ == "__main__":
     main()
+
 

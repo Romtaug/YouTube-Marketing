@@ -136,7 +136,7 @@ NEED_VIDEOS           = 45       # >= 60s
 NEED_SHORTS           = 45       # < 60s
 
 # Sécurité & anti-spam
-MAX_COMMENTS_PER_RUN  = 120
+MAX_COMMENTS_PER_RUN  = 100
 SLEEP_MIN, SLEEP_MAX  = 1.2, 3.0   # jitter entre commentaires
 
 # Override pour tester le mode “vendredi”
@@ -579,5 +579,6 @@ def main():
 # ===============================
 if __name__ == "__main__":
     main()
+
 
 

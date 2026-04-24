@@ -1,0 +1,14 @@
+name: keepalive
+
+on:
+  schedule:
+    - cron: "0 0 1 * *"  # 1 fois par mois
+  workflow_dispatch:      # permet de lancer à la main si besoin
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Keep repository active
+        run: echo "Repository is alive"

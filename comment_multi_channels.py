@@ -118,14 +118,21 @@ CHANNEL_TARGETS: List[str] = [
 # RECHERCHE THÈMES (autres jours)
 # ===============================
 THEME_QUERIES: List[str] = [
-    "actualité financière", "dette", "IA", "Agent IA", "trading en france", "investissement", "économie", "stoicisme",
-    "business en ligne", "crypto en france", "immobilier", "ingénieur data", "bourse", "libéralisme", "pragmatisme",
-    "entrepreneuriat", "dev perso", "patrimoine", "gagnant", "fintech", "néobanque", "vidéo de motivation", "aller à Dubaï",
-    "revenus passifs", "indépendance financière", "fiscalité france", "assurance vie", "ETF", "obligations françaises",
-    "intelligence artificielle", "automatisation no-code", "growth hacking", "side hustle", "start-up française", "podcast business",
-    "blockchain en france", "web3 france", "productivité quotidienne", "habitudes millionnaires", "mindset d'entrepreneur",
-    "résilience mentale", "travail au luxembourg", "expatriation suisse", "freelance data", "consultant stratégie",
-    "intelligence financière", "revenus en ligne", "cryptomonnaies", "gestion du temps", "succès entrepreneurial"
+    "actualité financière france", "actualité économique france", "investir en bourse", "investir en bourse débutant",
+    "finances personnelles", "liberté financière", "indépendance financière", "revenus passifs",
+    "gestion de patrimoine", "assurance vie", "PEA bourse", "ETF en france", "SCPI", "investissement locatif",
+    "immobilier en france", "crédit immobilier", "fiscalité française", "optimisation impôts france",
+    "trading en france", "analyse des marchés financiers", "bourse de paris", "cryptomonnaies en france",
+    "blockchain en france", "économie française", "dette publique française", "inflation pouvoir d'achat",
+    "investir dans l'or", "néobanque française", "fintech française",
+    "intelligence artificielle", "agent IA", "gagner de l'argent avec l'IA", "chaîne youtube automatisée",
+    "automatisation sans code", "ingénieur data france", "freelance data france",
+    "entrepreneuriat en france", "créer son entreprise en france", "business en ligne", "dropshipping en france",
+    "vente en ligne", "activité complémentaire", "start-up française", "podcast business français",
+    "réussite entrepreneuriale", "développement personnel", "vidéo de motivation en français",
+    "résilience mentale", "stoïcisme", "habitudes de millionnaire", "état d'esprit d'entrepreneur",
+    "gestion du temps", "productivité quotidienne",
+    "expatriation suisse", "travailler au luxembourg", "s'installer à Dubaï"
 ]
 
 SEARCH_RELEVANCE_LANG = "fr"

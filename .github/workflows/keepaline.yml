@@ -1,14 +1,66 @@
 name: keepalive
 
+# ---------------------------------------------------------------------------
+# Objectif : empecher GitHub de desactiver automatiquement les workflows
+# planifies (cron) apres 60 jours sans activite dans le repo.
+#
+# Principe : ne cree un commit VIDE que si le dernier commit du repo date de
+# plus de MIN_AGE_DAYS jours. Aucun fichier ajoute, aucun bruit inutile.
+#
+# Bonus : le push utilise le GITHUB_TOKEN par defaut, donc il ne redeclenche
+# aucun autre workflow du repo (pas de boucle, pas de minutes gaspillees).
+#
+# Installation : copier ce fichier dans .github/workflows/keepalive.yml
+# ---------------------------------------------------------------------------
+
 on:
   schedule:
-    - cron: "0 0 1 * *"  # 1 fois par mois
-  workflow_dispatch:      # permet de lancer à la main si besoin
+    - cron: '37 5 * * 1'   # tous les lundis a 05h37 UTC (heure decalee = moins de file d'attente)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Forcer le commit meme si le repo est actif"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: keepalive-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  keepalive:
+  ping:
+    # on ne fait rien sur les forks
+    if: github.event.repository.fork != true
     runs-on: ubuntu-latest
-
+    env:
+      MIN_AGE_DAYS: 45      # seuil de securite avant les 60 jours de GitHub
+      FORCE: ${{ inputs.force || false }}
     steps:
-      - name: Keep repository active
-        run: echo "Repository is alive"
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Ping si le repo est inactif
+        run: |
+          set -euo pipefail
+
+          last=$(git log -1 --format=%ct)
+          now=$(date -u +%s)
+          age=$(( (now - last) / 86400 ))
+          echo "Dernier commit : il y a ${age} jour(s) - seuil : ${MIN_AGE_DAYS} jour(s)"
+
+          if [ "${FORCE}" != "true" ] && [ "${age}" -lt "${MIN_AGE_DAYS}" ]; then
+            echo "Repo encore actif, aucun ping necessaire."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "chore(keepalive): ping du planificateur GitHub Actions"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+          echo "Ping envoye, les crons du repo restent actifs."
